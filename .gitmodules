@@ -8,6 +8,12 @@
 	path = external/randomx
 	url = https://github.com/MrCyjaneK/RandomX
 	branch = cyjan-fix-ios-v2
+[submodule "external/utf8proc"]
+	path = external/utf8proc
+	url = https://github.com/JuliaStrings/utf8proc.git
+[submodule "external/polyseed"]
+	path = external/polyseed
+	url = https://github.com/tevador/polyseed.git
 [submodule "external/supercop"]
 	path = external/supercop
 	url = https://github.com/monero-project/supercop
