@@ -6,7 +6,8 @@
 	url = https://github.com/trezor/trezor-common.git
 [submodule "external/randomx"]
 	path = external/randomx
-	url = https://github.com/tevador/RandomX
+	url = https://github.com/MrCyjaneK/RandomX
+	branch = cyjan-fix-ios-v2
 [submodule "external/supercop"]
 	path = external/supercop
 	url = https://github.com/monero-project/supercop
