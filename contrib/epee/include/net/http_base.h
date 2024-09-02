@@ -29,6 +29,7 @@
 #pragma once
 #include "memwipe.h"
 
+#include <stdint.h>
 #include <boost/utility/string_view.hpp>
 
 #include <string>
