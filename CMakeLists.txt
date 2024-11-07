@@ -75,7 +75,7 @@ if (${CMAKE_VERSION} VERSION_GREATER "3.0.0" AND CMAKE_MAKE_PROGRAM MATCHES "nin
     set(CMAKE_JOB_POOL_LINK link_job_pool)
   endif ()
 endif ()
-  
+
 option (USE_CLANG_TIDY_C   "Lint the code with clang-tidy - variant C"   OFF)
 option (USE_CLANG_TIDY_CXX "Lint the code with clang-tidy - variant C++" OFF)
 if (USE_CLANG_TIDY_C AND USE_CLANG_TIDY_CXX)
@@ -223,9 +223,9 @@ function(forbid_undefined_symbols)
 cmake_minimum_required(VERSION 3.5)
 project(test)
 option(EXPECT_SUCCESS "" ON)
-file(WRITE "${CMAKE_SOURCE_DIR}/incorrect_source.cpp" "void undefined_symbol(); void symbol() { undefined_symbol(); }")
+file(WRITE "${CMAKE_CURRENT_SOURCE_DIR}/incorrect_source.cpp" "void undefined_symbol(); void symbol() { undefined_symbol(); }")
 if (EXPECT_SUCCESS)
-  file(APPEND "${CMAKE_SOURCE_DIR}/incorrect_source.cpp" " void undefined_symbol() {}; ")
+  file(APPEND "${CMAKE_CURRENT_SOURCE_DIR}/incorrect_source.cpp" " void undefined_symbol() {}; ")
 endif()
 add_library(l0 SHARED incorrect_source.cpp)
 add_library(l1 MODULE incorrect_source.cpp)
@@ -394,7 +394,7 @@ else()
 endif()
 
 list(INSERT CMAKE_MODULE_PATH 0
-  "${CMAKE_SOURCE_DIR}/cmake")
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 if (NOT DEFINED ENV{DEVELOPER_LOCAL_TOOLS})
   message(STATUS "Could not find DEVELOPER_LOCAL_TOOLS in env (not required)")
@@ -1011,7 +1011,7 @@ else()
 
   # random crash on startup when asan is on if pie is enabled
   if(NOT SANITIZE AND ANDROID AND NOT BUILD_GUI_DEPS STREQUAL "ON" OR IOS)
-    #From Android 5: "only position independent executables (PIE) are supported" 
+    #From Android 5: "only position independent executables (PIE) are supported"
     message(STATUS "Enabling PIE executable")
     set(PIC_FLAG "")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIE")
