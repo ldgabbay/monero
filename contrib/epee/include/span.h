@@ -162,7 +162,6 @@ namespace epee
   {
     static_assert(!std::is_empty<T>(), "empty types will not work -> sizeof == 1");
     static_assert(std::is_standard_layout<T>(), "type must have standard layout");
-    static_assert(std::is_trivially_copyable<T>(), "type must be trivially copyable");
     static_assert(alignof(T) == 1, "type may have padding");
     return {reinterpret_cast<const std::uint8_t*>(std::addressof(src)), sizeof(T)};
   }
