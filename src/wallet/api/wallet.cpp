@@ -48,6 +48,9 @@
 #include <boost/locale.hpp>
 #include <boost/filesystem.hpp>
 #include "bc-ur/src/bc-ur.hpp"
+#if defined(HIDAPI_DUMMY) && !defined(HAVE_HIDAPI)
+#include "device/device_io_dummy.hpp"
+#endif
 
 using namespace std;
 using namespace cryptonote;
@@ -3202,6 +3205,103 @@ uint64_t WalletImpl::getBytesReceived()
 uint64_t WalletImpl::getBytesSent()
 {
     return m_wallet->get_bytes_sent();
+}
+
+
+// HIDAPI_DUMMY
+bool Wallet::getStateIsConnected() {
+    #if !(defined(HIDAPI_DUMMY) && !defined(HAVE_HIDAPI))
+    MERROR("MONERO compiled with #if !(defined(HIDAPI_DUMMY) && !defined(HAVE_HIDAPI))");
+    return false;
+    #else
+    return hw::io::device_io_dummy::stateIsConnected;
+    #endif
+}
+
+unsigned char* Wallet::getSendToDevice() {
+    #if !(defined(HIDAPI_DUMMY) && !defined(HAVE_HIDAPI))
+    MERROR("MONERO compiled with #if !(defined(HIDAPI_DUMMY) && !defined(HAVE_HIDAPI))");
+    return {};
+    #else
+    return hw::io::device_io_dummy::sendToDevice;
+    #endif
+}
+
+size_t Wallet::getSendToDeviceLength() {
+    #if !(defined(HIDAPI_DUMMY) && !defined(HAVE_HIDAPI))
+    MERROR("MONERO compiled with #if !(defined(HIDAPI_DUMMY) && !defined(HAVE_HIDAPI))");
+    return -1;
+    #else
+    return hw::io::device_io_dummy::sendToDeviceLength;
+    #endif
+}
+
+unsigned char* Wallet::getReceivedFromDevice() {
+    #if !(defined(HIDAPI_DUMMY) && !defined(HAVE_HIDAPI))
+    MERROR("MONERO compiled with #if !(defined(HIDAPI_DUMMY) && !defined(HAVE_HIDAPI))");
+    return {};
+    #else
+    return hw::io::device_io_dummy::receivedFromDevice;
+    #endif
+}
+
+size_t Wallet::getReceivedFromDeviceLength() {
+    #if !(defined(HIDAPI_DUMMY) && !defined(HAVE_HIDAPI))
+    MERROR("MONERO compiled with #if !(defined(HIDAPI_DUMMY) && !defined(HAVE_HIDAPI))");
+    return -1;
+    #else
+    return hw::io::device_io_dummy::receivedFromDeviceLength;
+    #endif
+}
+
+bool Wallet::getWaitsForDeviceSend() {
+    #if !(defined(HIDAPI_DUMMY) && !defined(HAVE_HIDAPI))
+    MERROR("MONERO compiled with #if !(defined(HIDAPI_DUMMY) && !defined(HAVE_HIDAPI))");
+    return false;
+    #else
+    return hw::io::device_io_dummy::waitsForDeviceSend;
+    #endif
+}
+
+bool Wallet::getWaitsForDeviceReceive() {
+    #if !(defined(HIDAPI_DUMMY) && !defined(HAVE_HIDAPI))
+    MERROR("MONERO compiled with #if !(defined(HIDAPI_DUMMY) && !defined(HAVE_HIDAPI))");
+    return false;
+    #else
+    return hw::io::device_io_dummy::waitsForDeviceReceive;
+    #endif
+}
+
+void Wallet::setDeviceReceivedData(unsigned char* data, size_t len) {
+    #if !(defined(HIDAPI_DUMMY) && !defined(HAVE_HIDAPI))
+    MERROR("MONERO compiled with #if !(defined(HIDAPI_DUMMY) && !defined(HAVE_HIDAPI))");
+    return;
+    #else
+    hw::io::device_io_dummy::setDeviceReceivedData(data, len);
+    #endif
+}
+
+void Wallet::setDeviceSendData(unsigned char* data, size_t len) {
+    #if !(defined(HIDAPI_DUMMY) && !defined(HAVE_HIDAPI))
+    MERROR("MONERO compiled with #if !(defined(HIDAPI_DUMMY) && !defined(HAVE_HIDAPI))");
+    return;
+    #else
+    hw::io::device_io_dummy::sendToDevice = static_cast<unsigned char *>(malloc(len));
+    hw::io::device_io_dummy::sendToDeviceLength = len;
+    memset(hw::io::device_io_dummy::sendToDevice, 0, len);
+    memcpy(hw::io::device_io_dummy::sendToDevice, data, len);
+    hw::io::device_io_dummy::waitsForDeviceSend = false;
+    hw::io::device_io_dummy::cv_send.notify_all();
+    #endif
+}
+
+void Wallet::setLedgerCallback(void (*sendToLedgerDevice)(unsigned char *command, unsigned int cmd_len)) {
+    #if !(defined(HIDAPI_DUMMY) && !defined(HAVE_HIDAPI))
+    MERROR("MONERO compiled with #if !(defined(HIDAPI_DUMMY) && !defined(HAVE_HIDAPI))");
+    return;
+    #else
+    hw::io::device_io_dummy::setLedgerCallback(sendToLedgerDevice);
+    #endif
 }
 
 } // namespace

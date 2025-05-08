@@ -1171,6 +1171,19 @@ struct Wallet
 
     //! get bytes sent
     virtual uint64_t getBytesSent() = 0;
+
+    // HIDAPI_DUMMY
+    static bool getStateIsConnected();
+    static unsigned char* getSendToDevice();
+    static size_t getSendToDeviceLength();
+    static unsigned char* getReceivedFromDevice();
+    static size_t getReceivedFromDeviceLength();
+    static bool getWaitsForDeviceSend();
+    static bool getWaitsForDeviceReceive();
+
+    static void setDeviceReceivedData(unsigned char* data, size_t len);
+    static void setDeviceSendData(unsigned char* data, size_t len);
+    static void setLedgerCallback(void (*sendToLedgerDevice)(unsigned char *command, unsigned int cmd_len));
 };
 
 /**
