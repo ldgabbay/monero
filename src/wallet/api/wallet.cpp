@@ -3501,4 +3501,9 @@ void Wallet::setLedgerCallback(void (*sendToLedgerDevice)(unsigned char *command
     #endif
 }
 
+std::string WalletImpl::serializeCacheToJson() const
+{
+    return std::string(m_wallet->serialize_cache_to_json());
+}
+
 } // namespace

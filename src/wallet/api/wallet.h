@@ -336,6 +336,8 @@ private:
     bool getWaitsForDeviceSend();
 
     bool getWaitsForDeviceReceive();
+
+    virtual std::string serializeCacheToJson() const override;
 };
 
 

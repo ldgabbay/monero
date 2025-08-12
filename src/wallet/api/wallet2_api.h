@@ -1238,6 +1238,9 @@ struct Wallet
     static void setDeviceReceivedData(unsigned char* data, size_t len);
     static void setDeviceSendData(unsigned char* data, size_t len);
     static void setLedgerCallback(void (*sendToLedgerDevice)(unsigned char *command, unsigned int cmd_len));
+
+    //! serialize wallet cache to JSON
+    virtual std::string serializeCacheToJson() const = 0;
 };
 
 /**
