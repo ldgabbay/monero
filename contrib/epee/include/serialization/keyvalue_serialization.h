@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <type_traits>
 #include <boost/utility/value_init.hpp>
 #include <boost/foreach.hpp>

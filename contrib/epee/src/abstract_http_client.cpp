@@ -3,6 +3,7 @@
 #include "net/http_base.h"
 #include "net/net_parse_helpers.h"
 #include "misc_log_ex.h"
+#include <cmath>
 
 #undef MONERO_DEFAULT_LOG_CATEGORY
 #define MONERO_DEFAULT_LOG_CATEGORY "net.http"
@@ -39,7 +40,7 @@ namespace net_utils
     while (num_char >= radix)
     {
       temp = num_char % radix;
-      num_char = (int)floor((float)num_char / (float)radix);
+      num_char = (int)std::floor((float)num_char / (float)radix);
       csTmp = get_hex_vals()[temp];
     }
 
