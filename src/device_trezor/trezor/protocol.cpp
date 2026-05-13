@@ -29,12 +29,17 @@
 
 #include "version.h"
 #include "protocol.hpp"
+#include "string_tools.h"
 #include <unordered_map>
 #include <set>
+#include <sstream>
 #include <utility>
 #include <boost/endian/conversion.hpp>
 #include <common/apply_permutation.h>
 #include <common/json_util.h>
+#include <rapidjson/document.h>
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
 #include <crypto/hmac-keccak.h>
 #include <ringct/rctSigs.h>
 #include <ringct/bulletproofs.h>
@@ -448,6 +453,10 @@ namespace tx {
         throw std::invalid_argument("Unknown rsig type");
       }
     }
+  }
+
+  void Signer::export_source_entry(MoneroTransactionSourceEntry *dst, size_t idx, bool need_ring_keys, bool need_ring_indices){
+    set_tx_input(dst, idx, need_ring_keys, need_ring_indices);
   }
 
   void Signer::set_tx_input(MoneroTransactionSourceEntry * dst, size_t idx, bool need_ring_keys, bool need_ring_indices){
@@ -1094,6 +1103,217 @@ namespace tx {
       memcpy(tx_keys[i].data, plaintext.get() + 32 * i, 32);
     }
     memwipe(plaintext.get(), keys_len);
+  }
+
+  namespace {
+
+  std::string bin_to_hex_lower(const std::string &bin)
+  {
+    return epee::string_tools::buff_to_hex_nodelimer(bin);
+  }
+
+  rapidjson::Value dest_entry_to_json(const messages::monero::MoneroTransactionDestinationEntry &e, rapidjson::Document::AllocatorType &a)
+  {
+    rapidjson::Value o(rapidjson::kObjectType);
+    if (e.has_amount())
+      o.AddMember("amount", e.amount(), a);
+    if (e.has_addr())
+    {
+      rapidjson::Value addr(rapidjson::kObjectType);
+      const auto &ad = e.addr();
+      if (ad.has_spend_public_key())
+      {
+        const std::string h = bin_to_hex_lower(ad.spend_public_key());
+        addr.AddMember("spend_public_key", rapidjson::Value(h.c_str(), static_cast<rapidjson::SizeType>(h.size()), a), a);
+      }
+      if (ad.has_view_public_key())
+      {
+        const std::string h = bin_to_hex_lower(ad.view_public_key());
+        addr.AddMember("view_public_key", rapidjson::Value(h.c_str(), static_cast<rapidjson::SizeType>(h.size()), a), a);
+      }
+      o.AddMember("addr", addr, a);
+    }
+    if (e.has_is_subaddress())
+      o.AddMember("is_subaddress", e.is_subaddress(), a);
+    if (e.has_original())
+      o.AddMember("original", rapidjson::Value(e.original().c_str(), static_cast<rapidjson::SizeType>(e.original().size()), a), a);
+    if (e.has_is_integrated())
+      o.AddMember("is_integrated", e.is_integrated(), a);
+    return o;
+  }
+
+  rapidjson::Value source_entry_to_json(const messages::monero::MoneroTransactionSourceEntry &e, rapidjson::Document::AllocatorType &a)
+  {
+    rapidjson::Value o(rapidjson::kObjectType);
+    rapidjson::Value ring(rapidjson::kArrayType);
+    for (int i = 0; i < e.outputs_size(); ++i)
+    {
+      const auto &out = e.outputs(i);
+      rapidjson::Value ring_m(rapidjson::kObjectType);
+      if (out.has_idx())
+        ring_m.AddMember("idx", out.idx(), a);
+      if (out.has_key())
+      {
+        rapidjson::Value key(rapidjson::kObjectType);
+        const auto &k = out.key();
+        if (k.has_dest())
+        {
+          const std::string h = bin_to_hex_lower(k.dest());
+          key.AddMember("dest", rapidjson::Value(h.c_str(), static_cast<rapidjson::SizeType>(h.size()), a), a);
+        }
+        if (k.has_commitment())
+        {
+          const std::string h = bin_to_hex_lower(k.commitment());
+          key.AddMember("commitment", rapidjson::Value(h.c_str(), static_cast<rapidjson::SizeType>(h.size()), a), a);
+        }
+        ring_m.AddMember("key", key, a);
+      }
+      ring.PushBack(ring_m, a);
+    }
+    o.AddMember("outputs", ring, a);
+    if (e.has_real_output())
+      o.AddMember("real_output", e.real_output(), a);
+    if (e.has_real_out_tx_key())
+    {
+      const std::string h = bin_to_hex_lower(e.real_out_tx_key());
+      o.AddMember("real_out_tx_key", rapidjson::Value(h.c_str(), static_cast<rapidjson::SizeType>(h.size()), a), a);
+    }
+    rapidjson::Value add_keys(rapidjson::kArrayType);
+    for (int i = 0; i < e.real_out_additional_tx_keys_size(); ++i)
+    {
+      const std::string h = bin_to_hex_lower(e.real_out_additional_tx_keys(i));
+      add_keys.PushBack(rapidjson::Value(h.c_str(), static_cast<rapidjson::SizeType>(h.size()), a), a);
+    }
+    o.AddMember("real_out_additional_tx_keys", add_keys, a);
+    if (e.has_real_output_in_tx_index())
+      o.AddMember("real_output_in_tx_index", e.real_output_in_tx_index(), a);
+    if (e.has_amount())
+      o.AddMember("amount", e.amount(), a);
+    if (e.has_rct())
+      o.AddMember("rct", e.rct(), a);
+    if (e.has_mask())
+    {
+      const std::string h = bin_to_hex_lower(e.mask());
+      o.AddMember("mask", rapidjson::Value(h.c_str(), static_cast<rapidjson::SizeType>(h.size()), a), a);
+    }
+    if (e.has_subaddr_minor())
+      o.AddMember("subaddr_minor", e.subaddr_minor(), a);
+    return o;
+  }
+
+  std::string monero_default_bip44_path(uint32_t subaddr_account)
+  {
+    std::ostringstream oss;
+    oss << "m/44'/128'/" << subaddr_account << "'";
+    return oss.str();
+  }
+
+  } // namespace
+
+
+  std::string trezor_connect_monero_sign_transaction_to_json(
+      wallet_shim *wallet,
+      const unsigned_tx_set *utx,
+      size_t tx_idx,
+      hw::tx_aux_data *aux_data,
+      cryptonote::network_type network_type)
+  {
+    CHECK_AND_ASSERT_THROW_MES(utx && aux_data, "null argument");
+    CHECK_AND_ASSERT_THROW_MES(std::get<0>(utx->transfers) == 0, "Unsupported non zero offset");
+    CHECK_AND_ASSERT_THROW_MES(tx_idx < utx->txes.size(), "Invalid transaction index");
+
+    Signer signer(wallet, utx, tx_idx, aux_data);
+    auto init_req = signer.step_init();
+    const auto &tsx = init_req->tsx_data();
+
+    rapidjson::Document doc;
+    doc.SetObject();
+    auto &alloc = doc.GetAllocator();
+
+    const std::string path_str = monero_default_bip44_path(utx->txes[tx_idx].subaddr_account);
+    doc.AddMember("path", rapidjson::Value(path_str.c_str(), static_cast<rapidjson::SizeType>(path_str.size()), alloc), alloc);
+    doc.AddMember("networkType", static_cast<uint32_t>(network_type), alloc);
+
+    rapidjson::Value tsx_data(rapidjson::kObjectType);
+    tsx_data.AddMember("version", tsx.version(), alloc);
+    if (tsx.has_payment_id() && !tsx.payment_id().empty())
+    {
+      const std::string h = bin_to_hex_lower(tsx.payment_id());
+      tsx_data.AddMember("payment_id", rapidjson::Value(h.c_str(), static_cast<rapidjson::SizeType>(h.size()), alloc), alloc);
+    }
+    tsx_data.AddMember("unlock_time", static_cast<uint64_t>(tsx.unlock_time()), alloc);
+
+    rapidjson::Value outputs(rapidjson::kArrayType);
+    for (int i = 0; i < tsx.outputs_size(); ++i)
+      outputs.PushBack(dest_entry_to_json(tsx.outputs(i), alloc), alloc);
+    tsx_data.AddMember("outputs", outputs, alloc);
+
+    if (tsx.has_change_dts())
+      tsx_data.AddMember("change_dts", dest_entry_to_json(tsx.change_dts(), alloc), alloc);
+
+    if (tsx.has_num_inputs())
+      tsx_data.AddMember("num_inputs", tsx.num_inputs(), alloc);
+    if (tsx.has_mixin())
+      tsx_data.AddMember("mixin", tsx.mixin(), alloc);
+    if (tsx.has_fee())
+      tsx_data.AddMember("fee", tsx.fee(), alloc);
+    if (tsx.has_account())
+      tsx_data.AddMember("account", tsx.account(), alloc);
+
+    if (tsx.minor_indices_size() > 0)
+    {
+      rapidjson::Value minors(rapidjson::kArrayType);
+      for (int i = 0; i < tsx.minor_indices_size(); ++i)
+        minors.PushBack(tsx.minor_indices(i), alloc);
+      tsx_data.AddMember("minor_indices", minors, alloc);
+    }
+
+    if (tsx.has_rsig_data())
+    {
+      const auto &rd = tsx.rsig_data();
+      rapidjson::Value rj(rapidjson::kObjectType);
+      if (rd.has_rsig_type())
+        rj.AddMember("rsig_type", rd.rsig_type(), alloc);
+      if (rd.has_bp_version())
+        rj.AddMember("bp_version", rd.bp_version(), alloc);
+      rapidjson::Value grp(rapidjson::kArrayType);
+      for (int i = 0; i < rd.grouping_size(); ++i)
+        grp.PushBack(static_cast<uint64_t>(rd.grouping(i)), alloc);
+      rj.AddMember("grouping", grp, alloc);
+      tsx_data.AddMember("rsig_data", rj, alloc);
+    }
+
+    if (tsx.integrated_indices_size() > 0)
+    {
+      rapidjson::Value ii(rapidjson::kArrayType);
+      for (int i = 0; i < tsx.integrated_indices_size(); ++i)
+        ii.PushBack(tsx.integrated_indices(i), alloc);
+      tsx_data.AddMember("integrated_indices", ii, alloc);
+    }
+
+    if (tsx.has_client_version())
+      tsx_data.AddMember("client_version", tsx.client_version(), alloc);
+    if (tsx.has_hard_fork())
+      tsx_data.AddMember("hard_fork", tsx.hard_fork(), alloc);
+    if (tsx.has_monero_version())
+      tsx_data.AddMember("monero_version", rapidjson::Value(tsx.monero_version().c_str(), static_cast<rapidjson::SizeType>(tsx.monero_version().size()), alloc), alloc);
+
+    doc.AddMember("tsx_data", tsx_data, alloc);
+
+    rapidjson::Value inputs(rapidjson::kArrayType);
+    const size_t n_in = utx->txes[tx_idx].sources.size();
+    for (size_t i = 0; i < n_in; ++i)
+    {
+      messages::monero::MoneroTransactionSourceEntry src_pb;
+      signer.export_source_entry(&src_pb, i, true, true);
+      inputs.PushBack(source_entry_to_json(src_pb, alloc), alloc);
+    }
+    doc.AddMember("inputs", inputs, alloc);
+
+    rapidjson::StringBuffer buffer;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+    doc.Accept(writer);
+    return std::string(buffer.GetString(), buffer.GetSize());
   }
 
 }

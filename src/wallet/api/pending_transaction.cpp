@@ -44,6 +44,11 @@
 
 #include "bc-ur/src/bc-ur.hpp"
 
+#if defined(DEVICE_TREZOR_READY) && DEVICE_TREZOR_READY
+#include "device/device_cold.hpp"
+#include "device_trezor/trezor/protocol.hpp"
+#endif
+
 using namespace std;
 
 namespace Monero {
@@ -208,6 +213,61 @@ std::string PendingTransactionImpl::commitUR(int max_fragment_length) {
         m_status = Status_Error;
         return "";
     }
+}
+
+std::string PendingTransactionImpl::commitTrezor(uint64_t tx_index)
+{
+#if !defined(DEVICE_TREZOR_READY) || !DEVICE_TREZOR_READY
+    (void)tx_index;
+    m_errorString = tr("This build was compiled without Trezor support");
+    m_status = Status_Error;
+    return "";
+#else
+    if (tx_index >= m_pending_tx.size())
+    {
+        m_errorString = tr("Invalid transaction index");
+        m_status = Status_Error;
+        return "";
+    }
+    try
+    {
+        tools::wallet2 *w = m_wallet.m_wallet.get();
+        tools::wallet2::unsigned_tx_set utx;
+        w->construct_unsigned_tx_set_for_signing(m_pending_tx, utx);
+        if (std::get<0>(utx.transfers) != 0)
+        {
+            m_errorString = tr("Unsupported unsigned transaction transfer offset");
+            m_status = Status_Error;
+            return "";
+        }
+        hw::tx_aux_data aux_data;
+        const int bpv = w->use_fork_rules(HF_VERSION_BULLETPROOF_PLUS, -10) ? 4
+            : (w->use_fork_rules(HF_VERSION_CLSAG, -10) ? 3
+            : (w->use_fork_rules(HF_VERSION_SMALLER_BP, -10) ? 2 : 1));
+        aux_data.bp_version = bpv;
+        aux_data.hard_fork = w->get_current_hard_fork();
+        aux_data.client_version = static_cast<unsigned>(bpv >= 4 ? 4u : 3u);
+
+        hw::wallet_shim shim;
+        shim.get_tx_pub_key_from_received_outs = std::bind(&tools::wallet2::get_tx_pub_key_from_received_outs, w, std::placeholders::_1);
+
+        const std::string json = hw::trezor::protocol::tx::trezor_connect_monero_sign_transaction_to_json(
+            &shim,
+            &utx,
+            static_cast<size_t>(tx_index),
+            &aux_data,
+            w->nettype());
+        m_errorString.clear();
+        m_status = Status_Ok;
+        return json;
+    }
+    catch (const std::exception &e)
+    {
+        m_errorString = e.what();
+        m_status = Status_Error;
+        return "";
+    }
+#endif
 }
 
 

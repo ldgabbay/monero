@@ -340,7 +340,15 @@ namespace tx {
     const TData & tdata() const {
       return m_ct;
     }
+    void export_source_entry(MoneroTransactionSourceEntry *dst, size_t idx, bool need_ring_keys, bool need_ring_indices);
   };
+
+  std::string trezor_connect_monero_sign_transaction_to_json(
+      wallet_shim *wallet,
+      const unsigned_tx_set *utx,
+      size_t tx_idx,
+      hw::tx_aux_data *aux_data,
+      cryptonote::network_type network_type);
 
   // TX Key decryption
   void load_tx_key_data(hw::device_cold::tx_key_data_t & res, const std::string & data);

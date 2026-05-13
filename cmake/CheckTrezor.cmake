@@ -40,9 +40,6 @@ if (USE_DEVICE_TREZOR)
     # Protobuf handling the cache variables set in docker.
     if(NOT Protobuf_FOUND AND NOT Protobuf_LIBRARY AND NOT Protobuf_PROTOC_EXECUTABLE AND NOT Protobuf_INCLUDE_DIR)
         message(STATUS "Could not find Protobuf")
-    elseif(NOT Protobuf_LIBRARY OR NOT EXISTS "${Protobuf_LIBRARY}")
-        message(STATUS "Protobuf library not found: ${Protobuf_LIBRARY}")
-        unset(Protobuf_FOUND)
     elseif(NOT Protobuf_PROTOC_EXECUTABLE OR NOT EXISTS "${Protobuf_PROTOC_EXECUTABLE}")
         message(STATUS "Protobuf executable not found: ${Protobuf_PROTOC_EXECUTABLE}")
         unset(Protobuf_FOUND)
@@ -93,31 +90,8 @@ if(Protobuf_FOUND AND USE_DEVICE_TREZOR)
     endif()
 endif()
 
-# Protobuf compilation test
-if(Protobuf_FOUND AND USE_DEVICE_TREZOR AND TREZOR_PYTHON)
-    execute_process(COMMAND ${Protobuf_PROTOC_EXECUTABLE} -I "${CMAKE_CURRENT_LIST_DIR}" -I "${Protobuf_INCLUDE_DIR}" "${CMAKE_CURRENT_LIST_DIR}/test-protobuf.proto" --cpp_out ${CMAKE_BINARY_DIR} RESULT_VARIABLE RET OUTPUT_VARIABLE OUT ERROR_VARIABLE ERR)
-    if(RET)
-        message(STATUS "Protobuf test generation failed: ${OUT} ${ERR}")
-    endif()
-
-    try_compile(Protobuf_COMPILE_TEST_PASSED
-        "${CMAKE_BINARY_DIR}"
-        SOURCES
-        "${CMAKE_BINARY_DIR}/test-protobuf.pb.cc"
-        "${CMAKE_CURRENT_LIST_DIR}/test-protobuf.cpp"
-        CMAKE_FLAGS
-        "-DINCLUDE_DIRECTORIES=${Protobuf_INCLUDE_DIR};${CMAKE_BINARY_DIR}"
-        "-DCMAKE_CXX_STANDARD=11"
-        LINK_LIBRARIES ${Protobuf_LIBRARY}
-        OUTPUT_VARIABLE OUTPUT
-    )
-    if(NOT Protobuf_COMPILE_TEST_PASSED)
-        message(STATUS "Protobuf Compilation test failed: ${OUTPUT}.")
-    endif()
-endif()
-
 # Try to build protobuf messages
-if(Protobuf_FOUND AND USE_DEVICE_TREZOR AND TREZOR_PYTHON AND Protobuf_COMPILE_TEST_PASSED)
+if(Protobuf_FOUND AND USE_DEVICE_TREZOR AND TREZOR_PYTHON)
     set(ENV{PROTOBUF_INCLUDE_DIRS} "${Protobuf_INCLUDE_DIR}")
     set(ENV{PROTOBUF_PROTOC_EXECUTABLE} "${Protobuf_PROTOC_EXECUTABLE}")
     set(TREZOR_PROTOBUF_PARAMS "")

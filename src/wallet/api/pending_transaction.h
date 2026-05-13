@@ -47,6 +47,7 @@ public:
     std::string errorString() const override;
     bool commit(const std::string &filename = "", bool overwrite = false) override;
     std::string commitUR(int max_fragment_length = 130) override;
+    std::string commitTrezor(uint64_t tx_index = 0) override;
     uint64_t amount() const override;
     uint64_t dust() const override;
     uint64_t fee() const override;

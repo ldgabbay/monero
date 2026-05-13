@@ -1212,8 +1212,10 @@ private:
 
     void commit_tx(pending_tx& ptx_vector);
     void commit_tx(std::vector<pending_tx>& ptx_vector);
+    void relay_raw_tx(const std::string &tx_as_hex);
     bool save_tx(const std::vector<pending_tx>& ptx_vector, const std::string &filename) const;
     std::string dump_tx_to_str(const std::vector<pending_tx> &ptx_vector) const;
+    void construct_unsigned_tx_set_for_signing(const std::vector<pending_tx>& ptx_vector, unsigned_tx_set &utx) const;
     std::string save_multisig_tx(multisig_tx_set txs);
     bool save_multisig_tx(const multisig_tx_set &txs, const std::string &filename);
     std::string save_multisig_tx(const std::vector<pending_tx>& ptx_vector);
@@ -1728,7 +1730,8 @@ private:
     bool is_unattended() const { return m_unattended; }
 
     std::pair<size_t, uint64_t> estimate_tx_size_and_weight(bool use_rct, int n_inputs, int ring_size, int n_outputs, size_t extra_size);
-
+    std::string export_trezor_tdis() const;
+    uint64_t import_trezor_encrypted_key_images_json(const std::string &json, uint64_t &spent, uint64_t &unspent, bool check_spent = true);
     bool get_rpc_payment_info(bool mining, bool &payment_required, uint64_t &credits, uint64_t &diff, uint64_t &credits_per_hash_found, cryptonote::blobdata &hashing_blob, uint64_t &height, uint64_t &seed_height, crypto::hash &seed_hash, crypto::hash &next_seed_hash, uint32_t &cookie);
     bool daemon_requires_payment();
     bool make_rpc_payment(uint32_t nonce, uint32_t cookie, uint64_t &credits, uint64_t &balance);

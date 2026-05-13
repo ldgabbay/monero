@@ -183,6 +183,7 @@ public:
     virtual PendingTransaction * createSweepUnmixableTransaction() override;
     bool submitTransaction(const std::string &fileName) override;
     bool submitTransactionUR(const std::string &input) override;
+    bool submitTransactionHex(const std::string &hex) override;
     virtual UnsignedTransaction * loadUnsignedTx(const std::string &unsigned_filename) override;
     virtual UnsignedTransaction * loadUnsignedTxUR(const std::string &input) override;
     bool hasUnknownKeyImages() const override;
@@ -338,6 +339,8 @@ private:
     bool getWaitsForDeviceReceive();
 
     virtual std::string serializeCacheToJson() const override;
+    virtual std::string exportTrezorTdis() const override;
+    bool importTrezorEncryptedKeyImagesJson(const std::string &json) override;
 };
 
 

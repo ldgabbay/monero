@@ -92,6 +92,7 @@ struct PendingTransaction
     // commit transaction or save to file if filename is provided.
     virtual bool commit(const std::string &filename = "", bool overwrite = false) = 0;
     virtual std::string commitUR(int max_fragment_length = 130) = 0;
+    virtual std::string commitTrezor(uint64_t tx_index = 0) = 0;
     virtual uint64_t amount() const = 0;
     virtual uint64_t dust() const = 0;
     virtual uint64_t fee() const = 0;
@@ -961,6 +962,7 @@ struct Wallet
     */
     virtual bool submitTransaction(const std::string &fileName) = 0;
     virtual bool submitTransactionUR(const std::string &input) = 0;
+    virtual bool submitTransactionHex(const std::string &input) = 0;
 
 
     /*!
@@ -1241,6 +1243,19 @@ struct Wallet
 
     //! serialize wallet cache to JSON
     virtual std::string serializeCacheToJson() const = 0;
+
+
+    /*!
+     * \brief exportTrezorTdis — export transfer details for Trezor cold key-image sync as JSON
+     *
+     * Returns an object `{ "tdis": [ ... ] }` with hex pubkeys and indices per output.
+     */
+    virtual std::string exportTrezorTdis() const = 0;
+
+    /*!
+     * \brief importTrezorEncryptedKeyImagesJson — import key images from Trezor-style encrypted JSON
+     */
+    virtual bool importTrezorEncryptedKeyImagesJson(const std::string &json) = 0;
 };
 
 /**

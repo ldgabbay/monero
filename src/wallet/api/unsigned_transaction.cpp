@@ -34,11 +34,13 @@
 
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "cryptonote_basic/cryptonote_basic_impl.h"
+#include "cryptonote_config.h"
 
 #include <memory>
 #include <vector>
 #include <sstream>
 #include <boost/format.hpp>
+#include <functional>
 
 #include "bc-ur/src/bc-ur.hpp"
 

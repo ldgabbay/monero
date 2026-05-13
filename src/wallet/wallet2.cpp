@@ -99,6 +99,7 @@ extern "C"
 {
 #include "crypto/keccak.h"
 #include "crypto/crypto-ops.h"
+#include <sodium/crypto_aead_chacha20poly1305.h>
 }
 using namespace std;
 using namespace crypto;
@@ -7910,6 +7911,81 @@ void wallet2::commit_tx(std::vector<pending_tx>& ptx_vector)
   }
 }
 //----------------------------------------------------------------------------------------------------
+void wallet2::relay_raw_tx(const std::string &tx_as_hex)
+{
+  using namespace cryptonote;
+
+  cryptonote::blobdata tx_blob;
+  THROW_WALLET_EXCEPTION_IF(!epee::string_tools::parse_hexstr_to_binbuff(tx_as_hex, tx_blob), error::wallet_internal_error, "Failed to parse hex");
+
+  transaction tx;
+  THROW_WALLET_EXCEPTION_IF(!parse_and_validate_tx_from_blob(tx_blob, tx), error::wallet_internal_error, "Failed to parse transaction");
+
+  if (m_light_wallet)
+  {
+    COMMAND_RPC_SUBMIT_RAW_TX::request oreq;
+    COMMAND_RPC_SUBMIT_RAW_TX::response ores;
+    oreq.address = get_account().get_public_address_str(m_nettype);
+    oreq.view_key = string_tools::pod_to_hex(unwrap(unwrap(get_account().get_keys().m_view_secret_key)));
+    oreq.tx = tx_as_hex;
+    {
+      const boost::lock_guard<boost::recursive_mutex> lock{m_daemon_rpc_mutex};
+      bool r = epee::net_utils::invoke_http_json("/submit_raw_tx", oreq, ores, *m_http_client, rpc_timeout, "POST");
+      THROW_WALLET_EXCEPTION_IF(!r, error::no_connection_to_daemon, "submit_raw_tx");
+      THROW_WALLET_EXCEPTION_IF(ores.status != "OK" && ores.status != "success", error::tx_rejected, tx, get_rpc_status(ores.status), ores.error);
+    }
+  }
+  else
+  {
+    COMMAND_RPC_SEND_RAW_TX::request req;
+    req.tx_as_hex = tx_as_hex;
+    req.do_not_relay = false;
+    req.do_sanity_checks = true;
+    COMMAND_RPC_SEND_RAW_TX::response daemon_send_resp;
+
+    {
+      const boost::lock_guard<boost::recursive_mutex> lock{m_daemon_rpc_mutex};
+      uint64_t pre_call_credits = m_rpc_payment_state.credits;
+      req.client = get_client_signature();
+      bool r = epee::net_utils::invoke_http_json("/sendrawtransaction", req, daemon_send_resp, *m_http_client, rpc_timeout);
+      THROW_ON_RPC_RESPONSE_ERROR(r, {}, daemon_send_resp, "sendrawtransaction", error::tx_rejected, tx, get_rpc_status(daemon_send_resp.status), get_text_reason(daemon_send_resp));
+      check_rpc_cost("/sendrawtransaction", daemon_send_resp.credits, pre_call_credits, COST_PER_TX_RELAY);
+    }
+  }
+
+  crypto::hash txid = get_transaction_hash(tx);
+  uint64_t tx_money_spent_in_ins = 0;
+  auto subaddr_account = []()->boost::optional<uint32_t> { return boost::none; }();
+  std::set<uint32_t> subaddr_indices;
+  for (const auto &in : tx.vin)
+  {
+    if (in.type() != typeid(cryptonote::txin_to_key))
+      continue;
+    const cryptonote::txin_to_key &in_to_key = boost::get<cryptonote::txin_to_key>(in);
+    const auto kit = m_key_images.find(in_to_key.k_image);
+    if (kit == m_key_images.end())
+      continue;
+    const transfer_details &td = m_transfers[kit->second];
+    const uint64_t amount = in_to_key.amount > 0 ? in_to_key.amount : td.amount();
+    tx_money_spent_in_ins += amount;
+    subaddr_account = td.m_subaddr_index.major;
+    subaddr_indices.insert(td.m_subaddr_index.minor);
+    set_spent(kit->second, 0);
+  }
+
+  if (tx_money_spent_in_ins > 0 && store_tx_info() && !m_unconfirmed_txs.count(txid))
+  {
+    THROW_WALLET_EXCEPTION_IF(!subaddr_account, error::wallet_internal_error,
+        "Relayed tx spends our outputs but subaddress account is unknown");
+    add_unconfirmed_tx(txid, tx, tx_money_spent_in_ins, {}, crypto::null_hash, 0, *subaddr_account, subaddr_indices);
+    auto utx_it = m_unconfirmed_txs.find(txid);
+    THROW_WALLET_EXCEPTION_IF(utx_it == m_unconfirmed_txs.end(), error::wallet_internal_error,
+        "unconfirmed tx wasn't found: " + string_tools::pod_to_hex(txid));
+    utx_it->second.m_amount_out = get_outgoing_amount(tx, tx_money_spent_in_ins);
+    LOG_PRINT_L1("Raw transaction relayed. <" << txid << ">");
+  }
+}
+//----------------------------------------------------------------------------------------------------
 bool wallet2::save_tx(const std::vector<pending_tx>& ptx_vector, const std::string &filename) const
 {
   LOG_PRINT_L0("saving " << ptx_vector.size() << " transactions");
@@ -7947,6 +8023,20 @@ std::string wallet2::dump_tx_to_str(const std::vector<pending_tx> &ptx_vector) c
   LOG_PRINT_L2("Saving unsigned tx data: " << oss.str());
   std::string ciphertext = encrypt_with_view_secret_key(oss.str());
   return std::string(UNSIGNED_TX_PREFIX) + ciphertext;
+}
+//----------------------------------------------------------------------------------------------------
+void wallet2::construct_unsigned_tx_set_for_signing(const std::vector<pending_tx>& ptx_vector, unsigned_tx_set &utx) const
+{
+  utx.txes.clear();
+  utx.txes.reserve(ptx_vector.size());
+  for (const auto &tx : ptx_vector)
+    utx.txes.push_back(get_construction_data_with_decrypted_short_payment_id(tx, m_account.get_device()));
+
+  utx.new_transfers = std::make_tuple(static_cast<uint64_t>(0), static_cast<uint64_t>(0), std::vector<exported_transfer_details>());
+
+  transfer_container transfers_copy;
+  get_transfers(transfers_copy);
+  utx.transfers = std::make_tuple(static_cast<uint64_t>(0), static_cast<uint64_t>(transfers_copy.size()), std::move(transfers_copy));
 }
 //----------------------------------------------------------------------------------------------------
 bool wallet2::load_unsigned_tx(const std::string &unsigned_filename, unsigned_tx_set &exported_txs) const
@@ -16714,6 +16804,149 @@ std::pair<size_t, uint64_t> wallet2::estimate_tx_size_and_weight(bool use_rct, i
   size_t size = estimate_tx_size(use_rct, n_inputs, ring_size - 1, n_outputs, extra_size, bulletproof, clsag, bulletproof_plus, use_view_tags);
   uint64_t weight = estimate_tx_weight(use_rct, n_inputs, ring_size - 1, n_outputs, extra_size, bulletproof, clsag, bulletproof_plus, use_view_tags);
   return std::make_pair(size, weight);
+}
+//----------------------------------------------------------------------------------------------------
+// Returns JSON: { "tdis": [ { "out_key", "tx_pub_key", optional "additional_tx_pub_keys", indices }, ... ] }
+// Hex fields are 64-char lower-case pubkeys; additional_tx_pub_keys matches protocol::ki::key_image_data
+// (subset of txn additional pubkeys for this transfer — currently 0 or 1 entry).
+std::string wallet2::export_trezor_tdis() const
+{
+  rapidjson::Document doc;
+  doc.SetObject();
+  auto &alloc = doc.GetAllocator();
+
+  rapidjson::Value tdis(rapidjson::kArrayType);
+  tdis.Reserve(static_cast<rapidjson::SizeType>(m_transfers.size()), alloc);
+
+  for (const auto &td : m_transfers)
+  {
+    const crypto::public_key out_key = td.get_public_key();
+    const crypto::public_key tx_pub_key = get_tx_pub_key_from_received_outs(td);
+    const std::vector<crypto::public_key> additional_tx_pub_keys = cryptonote::get_additional_tx_pub_keys_from_extra(td.m_tx);
+
+    std::vector<crypto::public_key> additional_for_tdi;
+    if (!additional_tx_pub_keys.empty() && additional_tx_pub_keys.size() > td.m_internal_output_index)
+      additional_for_tdi.push_back(additional_tx_pub_keys[td.m_internal_output_index]);
+
+    rapidjson::Value obj(rapidjson::kObjectType);
+    const std::string out_hex = epee::string_tools::pod_to_hex(out_key);
+    const std::string tx_pub_hex = epee::string_tools::pod_to_hex(tx_pub_key);
+    obj.AddMember("out_key", rapidjson::Value(out_hex.c_str(), static_cast<rapidjson::SizeType>(out_hex.size()), alloc), alloc);
+    obj.AddMember("tx_pub_key", rapidjson::Value(tx_pub_hex.c_str(), static_cast<rapidjson::SizeType>(tx_pub_hex.size()), alloc), alloc);
+    if (!additional_for_tdi.empty())
+    {
+      rapidjson::Value aux(rapidjson::kArrayType);
+      aux.Reserve(static_cast<rapidjson::SizeType>(additional_for_tdi.size()), alloc);
+      for (const auto &apk : additional_for_tdi)
+      {
+        const std::string ah = epee::string_tools::pod_to_hex(apk);
+        aux.PushBack(rapidjson::Value(ah.c_str(), static_cast<rapidjson::SizeType>(ah.size()), alloc), alloc);
+      }
+      obj.AddMember("additional_tx_pub_keys", aux, alloc);
+    }
+    obj.AddMember("internal_output_index", rapidjson::Value(static_cast<uint64_t>(td.m_internal_output_index)), alloc);
+    obj.AddMember("sub_addr_major", rapidjson::Value(td.m_subaddr_index.major), alloc);
+    obj.AddMember("sub_addr_minor", rapidjson::Value(td.m_subaddr_index.minor), alloc);
+    tdis.PushBack(obj, alloc);
+  }
+
+  doc.AddMember("tdis", tdis, alloc);
+
+  rapidjson::StringBuffer buffer;
+  rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+  doc.Accept(writer);
+  return std::string(buffer.GetString(), buffer.GetSize());
+}
+//----------------------------------------------------------------------------------------------------
+namespace
+{
+  static void decrypt_trezor_exported_ki_blob(const std::string &cipher, const std::string &iv, const std::string &key32, crypto::key_image &ki, crypto::signature &sig)
+  {
+    THROW_WALLET_EXCEPTION_IF(iv.size() != crypto_aead_chacha20poly1305_ietf_NPUBBYTES,
+        error::wallet_internal_error, "Trezor KI JSON: IV must be 12 bytes");
+    THROW_WALLET_EXCEPTION_IF(key32.size() != 32,
+        error::wallet_internal_error, "Trezor KI JSON: encryption key must be 32 bytes");
+    THROW_WALLET_EXCEPTION_IF(cipher.size() < crypto_aead_chacha20poly1305_ietf_ABYTES,
+        error::wallet_internal_error, "Trezor KI JSON: key_image ciphertext too short");
+    char buf[96];
+    unsigned long long out_len = 0;
+    const int r = crypto_aead_chacha20poly1305_ietf_decrypt(
+        reinterpret_cast<unsigned char *>(buf), &out_len, nullptr,
+        reinterpret_cast<const unsigned char *>(cipher.data()), cipher.size(),
+        nullptr, 0,
+        reinterpret_cast<const unsigned char *>(iv.data()),
+        reinterpret_cast<const unsigned char *>(key32.data()));
+    THROW_WALLET_EXCEPTION_IF(r != 0,
+        error::wallet_internal_error, "Trezor KI JSON: decryption failed (wrong key or corrupt ciphertext)");
+    THROW_WALLET_EXCEPTION_IF(out_len != 96,
+        error::wallet_internal_error, "Trezor KI JSON: unexpected plaintext length");
+    memcpy(ki.data, buf, 32);
+    memcpy(sig.c.data, buf + 32, 32);
+    memcpy(sig.r.data, buf + 64, 32);
+    memwipe(buf, sizeof(buf));
+  }
+}
+
+//----------------------------------------------------------------------------------------------------
+uint64_t wallet2::import_trezor_encrypted_key_images_json(const std::string &json, uint64_t &spent, uint64_t &unspent, bool check_spent)
+{
+  rapidjson::Document doc;
+  doc.Parse(json.c_str());
+  THROW_WALLET_EXCEPTION_IF(doc.HasParseError(), error::wallet_internal_error,
+      std::string("Trezor KI JSON: parse error at offset ") + std::to_string(doc.GetErrorOffset()));
+
+  const rapidjson::Value *proot = &doc;
+  if (doc.IsObject() && doc.HasMember("payload") && doc["payload"].IsObject())
+    proot = &doc["payload"];
+
+  THROW_WALLET_EXCEPTION_IF(!proot->IsObject(), error::wallet_internal_error, "Trezor KI JSON: expected JSON object");
+  const rapidjson::Value &root = *proot;
+
+  THROW_WALLET_EXCEPTION_IF(!root.HasMember("key_images") || !root["key_images"].IsArray(),
+      error::wallet_internal_error, "Trezor KI JSON: missing or invalid key_images array");
+
+  std::string enc_key_bin;
+  if (root.HasMember("signature") && root["signature"].IsString())
+  {
+    THROW_WALLET_EXCEPTION_IF(!epee::string_tools::parse_hexstr_to_binbuff(root["signature"].GetString(), enc_key_bin),
+        error::wallet_internal_error, "Trezor KI JSON: invalid hex in signature");
+  }
+  else if (root.HasMember("enc_key") && root["enc_key"].IsString())
+  {
+    THROW_WALLET_EXCEPTION_IF(!epee::string_tools::parse_hexstr_to_binbuff(root["enc_key"].GetString(), enc_key_bin),
+        error::wallet_internal_error, "Trezor KI JSON: invalid hex in enc_key");
+  }
+  else
+  {
+    THROW_WALLET_EXCEPTION(error::wallet_internal_error, "Trezor KI JSON: need signature or enc_key (32-byte hex)");
+  }
+  THROW_WALLET_EXCEPTION_IF(enc_key_bin.size() != 32,
+      error::wallet_internal_error, "Trezor KI JSON: encryption key must decode to 32 bytes");
+
+  const rapidjson::Value &arr = root["key_images"];
+  std::vector<std::pair<crypto::key_image, crypto::signature>> ski;
+  ski.reserve(arr.Size());
+
+  for (rapidjson::SizeType i = 0; i < arr.Size(); ++i)
+  {
+    const rapidjson::Value &el = arr[i];
+    THROW_WALLET_EXCEPTION_IF(!el.IsObject(), error::wallet_internal_error, "Trezor KI JSON: key_images entry must be object");
+    THROW_WALLET_EXCEPTION_IF(!el.HasMember("iv") || !el["iv"].IsString(), error::wallet_internal_error, "Trezor KI JSON: missing iv");
+    THROW_WALLET_EXCEPTION_IF(!el.HasMember("key_image") || !el["key_image"].IsString(), error::wallet_internal_error, "Trezor KI JSON: missing key_image");
+
+    std::string iv_bin, blob_bin;
+    THROW_WALLET_EXCEPTION_IF(!epee::string_tools::parse_hexstr_to_binbuff(el["iv"].GetString(), iv_bin),
+        error::wallet_internal_error, "Trezor KI JSON: invalid hex in iv");
+    THROW_WALLET_EXCEPTION_IF(!epee::string_tools::parse_hexstr_to_binbuff(el["key_image"].GetString(), blob_bin),
+        error::wallet_internal_error, "Trezor KI JSON: invalid hex in key_image");
+
+    crypto::key_image ki{};
+    crypto::signature sig{};
+    decrypt_trezor_exported_ki_blob(blob_bin, iv_bin, enc_key_bin, ki, sig);
+    ski.emplace_back(std::move(ki), std::move(sig));
+  }
+
+  return import_key_images(ski, 0, spent, unspent, check_spent);
 }
 //----------------------------------------------------------------------------------------------------
 }

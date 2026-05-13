@@ -1468,6 +1468,45 @@ bool WalletImpl::submitTransactionUR(const string &input) {
     return true;
 }
 
+bool WalletImpl::submitTransactionHex(const string &hex) {
+    clearStatus();
+    if (checkBackgroundSync("cannot submit tx"))
+        return false;
+
+    pauseRefresh();
+    try {
+        m_wallet->relay_raw_tx(hex);
+    } catch (const tools::error::daemon_busy&) {
+        setStatusError(tr("daemon is busy. Please try again later."));
+        startRefresh();
+        return false;
+    } catch (const tools::error::no_connection_to_daemon&) {
+        setStatusError(tr("no connection to daemon."));
+        startRefresh();
+        return false;
+    } catch (const tools::error::tx_rejected& e) {
+        std::ostringstream writer;
+        writer << (boost::format(tr("transaction %s was rejected by daemon with status: ")) % get_transaction_hash(e.tx())) << e.status();
+        if (!e.reason().empty())
+            writer << tr(". Reason: ") << e.reason();
+        setStatusError(writer.str());
+        startRefresh();
+        return false;
+    } catch (const std::exception &e) {
+        setStatusError(string(tr("Unknown exception: ")) + e.what());
+        startRefresh();
+        return false;
+    } catch (...) {
+        setStatusError(tr("Unhandled exception"));
+        startRefresh();
+        return false;
+    }
+    startRefresh();
+    if (m_history)
+        m_history->refresh();
+    return true;
+}
+
 
 bool WalletImpl::hasUnknownKeyImages() const
 {
@@ -3504,6 +3543,35 @@ void Wallet::setLedgerCallback(void (*sendToLedgerDevice)(unsigned char *command
 std::string WalletImpl::serializeCacheToJson() const
 {
     return std::string(m_wallet->serialize_cache_to_json());
+}
+
+std::string WalletImpl::exportTrezorTdis() const
+{
+    return m_wallet->export_trezor_tdis();
+}
+
+bool WalletImpl::importTrezorEncryptedKeyImagesJson(const string &json)
+{
+  if (checkBackgroundSync("cannot import key images"))
+    return false;
+  if (!trustedDaemon()) {
+    setStatusError(tr("Key images can only be imported with a trusted daemon"));
+    return false;
+  }
+  try
+  {
+    uint64_t spent = 0, unspent = 0;
+    uint64_t height = m_wallet->import_trezor_encrypted_key_images_json(json, spent, unspent);
+    LOG_PRINT_L2("Trezor encrypted key images imported to height " << height << ", "
+        << print_money(spent) << " spent, " << print_money(unspent) << " unspent");
+  }
+  catch (const std::exception &e)
+  {
+    LOG_ERROR("Error importing Trezor encrypted key images: " << e.what());
+    setStatusError(string(tr("Failed to import key images: ")) + e.what());
+    return false;
+  }
+  return true;
 }
 
 } // namespace
