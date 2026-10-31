@@ -1405,9 +1405,10 @@ bool WalletImpl::submitTransaction(const string &fileName) {
     return false;
   std::unique_ptr<PendingTransactionImpl> transaction(new PendingTransactionImpl(*this));
 
-  bool r = m_wallet->load_tx(fileName, transaction->m_pending_tx);
-  if (!r) {
-    setStatus(Status_Ok, tr("Failed to load transaction from file"));
+  try {
+    m_wallet->load_tx(fileName, transaction->m_pending_tx);
+  } catch (const std::exception &e) {
+    setStatusError(e.what());
     return false;
   }
 
@@ -1454,9 +1455,10 @@ bool WalletImpl::submitTransactionUR(const string &input) {
         return false;
     std::unique_ptr<PendingTransactionImpl> transaction(new PendingTransactionImpl(*this));
 
-    bool r = m_wallet->parse_tx_from_str(data, transaction->m_pending_tx, NULL);
-    if (!r) {
-        setStatus(Status_Ok, tr("Failed to load transaction from file"));
+    try {
+        m_wallet->parse_tx_from_str(data, transaction->m_pending_tx, NULL);
+    } catch (const std::exception &e) {
+        setStatusError(e.what());
         return false;
     }
 

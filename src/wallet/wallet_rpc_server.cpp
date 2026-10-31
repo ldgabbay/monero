@@ -1708,13 +1708,7 @@ namespace tools
     std::vector<tools::wallet2::pending_tx> ptx_vector;
     try
     {
-      bool r = m_wallet->parse_tx_from_str(blob, ptx_vector, NULL);
-      if (!r)
-      {
-        er.code = WALLET_RPC_ERROR_CODE_BAD_SIGNED_TX_DATA;
-        er.message = "Failed to parse signed tx data.";
-        return false;
-      }
+      m_wallet->parse_tx_from_str(blob, ptx_vector, NULL);
     }
     catch (const std::exception &e)
     {

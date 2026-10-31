@@ -8371,47 +8371,54 @@ std::string wallet2::sign_tx_dump_to_str(unsigned_tx_set &exported_txs, std::vec
   return std::string(SIGNED_TX_PREFIX) + ciphertext;
 }
 //----------------------------------------------------------------------------------------------------
-bool wallet2::load_tx(const std::string &signed_filename, std::vector<tools::wallet2::pending_tx> &ptx, std::function<bool(const signed_tx_set&)> accept_func)
+void wallet2::load_tx(const std::string &signed_filename, std::vector<tools::wallet2::pending_tx> &ptx, std::function<bool(const signed_tx_set&)> accept_func)
 {
   std::string s;
   boost::system::error_code errcode;
   signed_tx_set signed_txs;
 
-  if (!boost::filesystem::exists(signed_filename, errcode))
-  {
-    LOG_PRINT_L0("File " << signed_filename << " does not exist: " << errcode);
-    return false;
-  }
+  THROW_WALLET_EXCEPTION_IF(!boost::filesystem::exists(signed_filename, errcode), error::wallet_internal_error,
+    "File " + signed_filename + " does not exist: " + errcode.message());
+  THROW_WALLET_EXCEPTION_IF(!load_from_file(signed_filename.c_str(), s), error::wallet_internal_error,
+    "Failed to load from " + signed_filename);
 
-  if (!load_from_file(signed_filename.c_str(), s))
-  {
-    LOG_PRINT_L0("Failed to load from " << signed_filename);
-    return false;
-  }
-
-  return this->parse_tx_from_str(s, ptx, accept_func);
+  this->parse_tx_from_str(s, ptx, accept_func);
 }
 //----------------------------------------------------------------------------------------------------
-bool wallet2::parse_tx_from_str(const std::string &signed_tx_st, std::vector<tools::wallet2::pending_tx> &ptx, std::function<bool(const signed_tx_set &)> accept_func)
+void wallet2::parse_tx_from_str(const std::string &signed_tx_st, std::vector<tools::wallet2::pending_tx> &ptx, std::function<bool(const signed_tx_set &)> accept_func)
 {
   std::string s = signed_tx_st;
   signed_tx_set signed_txs;
 
   const size_t magiclen = strlen(SIGNED_TX_PREFIX) - 1;
-  if (strncmp(s.c_str(), SIGNED_TX_PREFIX, magiclen))
-  {
-    LOG_PRINT_L0("Bad magic from signed transaction");
-    return false;
-  }
+  THROW_WALLET_EXCEPTION_IF(strncmp(s.c_str(), SIGNED_TX_PREFIX, magiclen), error::wallet_internal_error,
+    "Bad magic from signed transaction");
   s = s.substr(magiclen);
   const char version = s[0];
   s = s.substr(1);
   if (version == '\003')
   {
-    if (!m_load_deprecated_formats)
+    THROW_WALLET_EXCEPTION_IF(!m_load_deprecated_formats, error::wallet_internal_error,
+      "Not loading deprecated format");
+    try
     {
-      LOG_PRINT_L0("Not loading deprecated format");
-      return false;
+      std::istringstream iss(s);
+      boost::archive::portable_binary_iarchive ar(iss);
+      ar >> signed_txs;
+    }
+    catch (...)
+    {
+      THROW_WALLET_EXCEPTION(error::wallet_internal_error, "Failed to parse data from signed transaction");
+    }
+  }
+  else if (version == '\004')
+  {
+    THROW_WALLET_EXCEPTION_IF(!m_load_deprecated_formats, error::wallet_internal_error,
+      "Not loading deprecated format");
+    try { s = decrypt_with_view_secret_key(s); }
+    catch (const std::exception &e)
+    {
+      THROW_WALLET_EXCEPTION(error::wallet_internal_error, std::string("Failed to decrypt signed transaction: ") + e.what());
     }
     try
     {
@@ -8421,61 +8428,31 @@ bool wallet2::parse_tx_from_str(const std::string &signed_tx_st, std::vector<too
     }
     catch (...)
     {
-      LOG_PRINT_L0("Failed to parse data from signed transaction");
-      return false;
-    }
-  }
-  else if (version == '\004')
-  {
-    if (!m_load_deprecated_formats)
-    {
-      LOG_PRINT_L0("Not loading deprecated format");
-      return false;
-    }
-    try
-    {
-      s = decrypt_with_view_secret_key(s);
-      try
-      {
-        std::istringstream iss(s);
-        boost::archive::portable_binary_iarchive ar(iss);
-        ar >> signed_txs;
-      }
-      catch (...)
-      {
-        LOG_PRINT_L0("Failed to parse decrypted data from signed transaction");
-        return false;
-      }
-    }
-    catch (const std::exception &e)
-    {
-      LOG_PRINT_L0("Failed to decrypt signed transaction: " << e.what());
-      return false;
+      THROW_WALLET_EXCEPTION(error::wallet_internal_error, "Failed to parse decrypted data from signed transaction");
     }
   }
   else if (version == '\005')
   {
     try { s = decrypt_with_view_secret_key(s); }
-    catch (const std::exception &e) { LOG_PRINT_L0("Failed to decrypt signed transaction: " << e.what()); return false; }
+    catch (const std::exception &e)
+    {
+      THROW_WALLET_EXCEPTION(error::wallet_internal_error, std::string("Failed to decrypt signed transaction: ") + e.what());
+    }
+    bool deserialized;
     try
     {
       binary_archive<false> ar{epee::strspan<std::uint8_t>(s)};
-      if (!::serialization::serialize(ar, signed_txs))
-      {
-        LOG_PRINT_L0("Failed to deserialize signed transaction");
-        return false;
-      }
+      deserialized = ::serialization::serialize(ar, signed_txs);
     }
     catch (const std::exception &e)
     {
-      LOG_PRINT_L0("Failed to decrypt signed transaction: " << e.what());
-      return false;
+      THROW_WALLET_EXCEPTION(error::wallet_internal_error, std::string("Failed to deserialize signed transaction: ") + e.what());
     }
+    THROW_WALLET_EXCEPTION_IF(!deserialized, error::wallet_internal_error, "Failed to deserialize signed transaction");
   }
   else
   {
-    LOG_PRINT_L0("Unsupported version in signed transaction");
-    return false;
+    THROW_WALLET_EXCEPTION(error::wallet_internal_error, "Unsupported version in signed transaction");
   }
 
   try
@@ -8512,23 +8489,19 @@ bool wallet2::parse_tx_from_str(const std::string &signed_tx_st, std::vector<too
   }
   catch (const std::exception &e)
   {
-    LOG_PRINT_L0("Failed to validate signed transaction: " << e.what());
-    return false;
+    THROW_WALLET_EXCEPTION(error::wallet_internal_error, std::string("Failed to validate signed transaction: ") + e.what());
   }
 
   // print result for user
   LOG_PRINT_L0("Loaded signed tx data from binary: " << signed_txs.ptx.size() << " transactions");
   for (auto &c_ptx: signed_txs.ptx) LOG_PRINT_L0(cryptonote::obj_to_json_str(c_ptx.tx));
 
-  if (accept_func && !accept_func(signed_txs))
-  {
-    LOG_PRINT_L1("Transactions rejected by callback");
-    return false;
-  }
+  THROW_WALLET_EXCEPTION_IF(accept_func && !accept_func(signed_txs), error::wallet_internal_error,
+    "Transactions rejected by callback");
 
   // import key images
-  bool r = this->import_key_images(signed_txs.key_images);
-  if (!r) return false;
+  THROW_WALLET_EXCEPTION_IF(!this->import_key_images(signed_txs.key_images), error::wallet_internal_error,
+    "More key images returned than we know outputs for");
 
   // remember key images for this tx, for when we get those txes from the blockchain
   for (const auto &e: signed_txs.tx_key_images)
@@ -8542,13 +8515,10 @@ bool wallet2::parse_tx_from_str(const std::string &signed_tx_st, std::vector<too
   }
   catch (const std::exception &e)
   {
-    LOG_PRINT_L0("Failed to validate signed transaction (post import): " << e.what());
-    return false;
+    THROW_WALLET_EXCEPTION(error::wallet_internal_error, std::string("Failed to validate signed transaction (post import): ") + e.what());
   }
 
   ptx = signed_txs.ptx;
-
-  return true;
 }
 //----------------------------------------------------------------------------------------------------
 std::string wallet2::save_multisig_tx(multisig_tx_set txs)
