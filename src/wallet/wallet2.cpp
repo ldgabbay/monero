@@ -8487,15 +8487,28 @@ bool wallet2::parse_tx_from_str(const std::string &signed_tx_st, std::vector<too
     // directly validate key images here.
     // NOTE: These txs may be READ-ONLY, which means spent/frozen inputs are allowed.
     const auto &kis = signed_txs.key_images;
-    this->sanity_check_pending_tx_set(signed_txs.ptx,
-      true,
-      false,
-      boost::optional<std::function<const crypto::key_image(const size_t)>>{ [&kis](const size_t i) {
-        CHECK_AND_ASSERT_THROW_MES(i < kis.size(), "failed loading signed tx: ptx selected transfer "
-          "is outside the bounds of imported key images");
-        return kis.at(i);
-      } },
-      true);
+    // Keystone sends no key images here, so check against the ones already imported.
+    if (kis.empty())
+    {
+      // Keystone also lists a tx's key images in source order, not the sorted order of its inputs.
+      for (auto &signed_ptx : signed_txs.ptx)
+      {
+        signed_ptx.key_images.clear();
+        for (const auto &in : signed_ptx.tx.vin)
+          signed_ptx.key_images += boost::to_string(boost::get<txin_to_key>(in).k_image) + " ";
+      }
+      this->sanity_check_pending_tx_set(signed_txs.ptx, true, true, boost::none, true);
+    }
+    else
+      this->sanity_check_pending_tx_set(signed_txs.ptx,
+        true,
+        false,
+        boost::optional<std::function<const crypto::key_image(const size_t)>>{ [&kis](const size_t i) {
+          CHECK_AND_ASSERT_THROW_MES(i < kis.size(), "failed loading signed tx: ptx selected transfer "
+            "is outside the bounds of imported key images");
+          return kis.at(i);
+        } },
+        true);
   }
   catch (const std::exception &e)
   {
