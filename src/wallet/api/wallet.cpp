@@ -1601,6 +1601,16 @@ bool WalletImpl::importKeyImages(const string &filename)
 
 bool WalletImpl::importKeyImagesUR(const string &input)
 {
+    return importKeyImagesUR(input, boost::none);
+}
+
+bool WalletImpl::importKeyImagesURAtOffset(const string &input, uint32_t offset)
+{
+    return importKeyImagesUR(input, boost::optional<uint32_t>(offset));
+}
+
+bool WalletImpl::importKeyImagesUR(const string &input, boost::optional<uint32_t> offset)
+{
     if (checkBackgroundSync("cannot import key images"))
         return false;
     if (!trustedDaemon()) {
@@ -1639,7 +1649,7 @@ bool WalletImpl::importKeyImagesUR(const string &input)
 
         uint64_t spent = 0, unspent = 0;
 
-        uint64_t height = m_wallet->import_key_images_str(data, spent, unspent);
+        uint64_t height = m_wallet->import_key_images_str_ext(data, spent, unspent, offset);
         LOG_PRINT_L2("Signed key images imported to height " << height << ", "
                                                              << print_money(spent) << " spent, " << print_money(unspent) << " unspent");
     }
@@ -1688,18 +1698,25 @@ bool WalletImpl::exportOutputs(const string &filename, bool all)
 
 std::string WalletImpl::exportOutputsUR(size_t max_fragment_length, bool all)
 {
+    return std::get<2>(exportOutputsURWithOffset(max_fragment_length, all, 0xffffffff));
+}
+
+std::tuple<uint64_t, uint64_t, std::string> WalletImpl::exportOutputsURWithOffset(size_t max_fragment_length, bool all, uint32_t count)
+{
 
     if (checkBackgroundSync("cannot export outputs"))
-        return "";
+        return std::make_tuple(0, 0, "");
     if (m_wallet->key_on_device())
     {
         setStatusError(string(tr("Not supported on HW wallets.")));
-        return "";
+        return std::make_tuple(0, 0, "");
     }
 
     try
     {
-        std::string data = m_wallet->export_outputs_to_str(all);
+        uint64_t offset, exported;
+        std::string data;
+        std::tie(offset, exported, data) = m_wallet->export_outputs_to_str_ext(all, 0, count);
         auto urMessage = ur::string_to_bytes(data);
         ur::ByteVector cbor;
         ur::CborLite::encodeBytes(cbor, urMessage);
@@ -1709,13 +1726,13 @@ std::string WalletImpl::exportOutputsUR(size_t max_fragment_length, bool all)
         for(size_t i = 0; i < encoder.seq_len(); i++) {
             output.append("\n"+encoder.next_part());
         }
-        return output;
+        return std::make_tuple(offset, exported, output);
     }
     catch (const std::exception &e)
     {
         LOG_ERROR("Error exporting outputs: " << e.what());
         setStatusError(string(tr("Error exporting outputs: ")) + e.what());
-        return "";
+        return std::make_tuple(0, 0, "");
     }
 }
 

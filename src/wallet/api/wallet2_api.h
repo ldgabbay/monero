@@ -32,6 +32,7 @@
 
 
 #include <string>
+#include <tuple>
 #include <vector>
 #include <list>
 #include <set>
@@ -996,6 +997,8 @@ struct Wallet
     */
     virtual bool importKeyImages(const std::string &filename) = 0;
     virtual bool importKeyImagesUR(const std::string &input) = 0;
+    //! imports key images for an export that started at offset, ignoring the offset in the input
+    virtual bool importKeyImagesURAtOffset(const std::string &input, uint32_t offset) = 0;
 
     /*!
      * \brief exportOutputs - exports outputs to file
@@ -1004,6 +1007,8 @@ struct Wallet
      */
     virtual bool exportOutputs(const std::string &filename, bool all = false) = 0;
     virtual std::string exportOutputsUR(size_t max_fragment_length, bool all = false) = 0;
+    //! exportOutputsUR limited to count outputs, also giving where the export starts in the wallet's outputs and how many it holds
+    virtual std::tuple<uint64_t, uint64_t, std::string> exportOutputsURWithOffset(size_t max_fragment_length, bool all, uint32_t count) = 0;
 
     /*!
      * \brief importOutputs - imports outputs from file

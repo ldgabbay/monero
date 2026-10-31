@@ -1673,6 +1673,7 @@ private:
     // Import/Export wallet data
     std::tuple<uint64_t, uint64_t, std::vector<tools::wallet2::exported_transfer_details>> export_outputs(bool all = false, uint32_t start = 0, uint32_t count = 0xffffffff) const;
     std::string export_outputs_to_str(bool all = false, uint32_t start = 0, uint32_t count = 0xffffffff) const;
+    std::tuple<uint64_t, uint64_t, std::string> export_outputs_to_str_ext(bool all = false, uint32_t start = 0, uint32_t count = 0xffffffff) const;
     size_t import_outputs(const std::tuple<uint64_t, uint64_t, std::vector<tools::wallet2::exported_transfer_details>> &outputs);
     size_t import_outputs(const std::tuple<uint64_t, uint64_t, std::vector<tools::wallet2::transfer_details>> &outputs);
     size_t import_outputs_from_str(const std::string &outputs_st);
@@ -1687,6 +1688,7 @@ private:
     uint64_t import_key_images(const std::vector<std::pair<crypto::key_image, crypto::signature>> &signed_key_images, size_t offset, uint64_t &spent, uint64_t &unspent, bool check_spent = true);
     uint64_t import_key_images(const std::string &filename, uint64_t &spent, uint64_t &unspent);
     uint64_t import_key_images_str(const std::string &data, uint64_t &spent, uint64_t &unspent);
+    uint64_t import_key_images_str_ext(const std::string &data, uint64_t &spent, uint64_t &unspent, boost::optional<uint32_t> offset_override);
     bool import_key_images(std::vector<crypto::key_image> key_images, size_t offset=0, boost::optional<std::unordered_set<size_t>> selected_transfers=boost::none);
     bool import_key_images(signed_tx_set & signed_tx, size_t offset=0, bool only_selected_transfers=false);
     crypto::public_key get_tx_pub_key_from_received_outs(const tools::wallet2::transfer_details &td) const;

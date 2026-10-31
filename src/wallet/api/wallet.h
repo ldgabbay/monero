@@ -191,8 +191,10 @@ public:
     std::string exportKeyImagesUR(size_t max_fragment_length, bool all = false) override;
     bool importKeyImages(const std::string &filename) override;
     bool importKeyImagesUR(const std::string &input) override;
+    bool importKeyImagesURAtOffset(const std::string &input, uint32_t offset) override;
     bool exportOutputs(const std::string &filename, bool all = false) override;
     std::string exportOutputsUR(size_t max_fragment_length, bool all) override;
+    std::tuple<uint64_t, uint64_t, std::string> exportOutputsURWithOffset(size_t max_fragment_length, bool all, uint32_t count) override;
     bool importOutputs(const std::string &filename) override;
     bool importOutputsUR(const std::string &filename) override;
     bool scanTransactions(const std::vector<std::string> &txids) override;
@@ -263,6 +265,7 @@ public:
     virtual uint64_t getBytesSent() override;
 
 private:
+    bool importKeyImagesUR(const std::string &input, boost::optional<uint32_t> offset);
     void clearStatus() const;
     void setStatusError(const std::string& message) const;
     void setStatusCritical(const std::string& message) const;

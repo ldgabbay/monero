@@ -14521,6 +14521,11 @@ uint64_t wallet2::import_key_images(const std::string &filename, uint64_t &spent
 
 uint64_t wallet2::import_key_images_str(const std::string &data, uint64_t &spent, uint64_t &unspent)
 {
+  return wallet2::import_key_images_str_ext(data, spent, unspent, boost::none);
+}
+
+uint64_t wallet2::import_key_images_str_ext(const std::string &data, uint64_t &spent, uint64_t &unspent, boost::optional<uint32_t> offset_override)
+{
   PERF_TIMER(import_key_images_fsu);
   std::string data_local = data;
 
@@ -14542,7 +14547,7 @@ uint64_t wallet2::import_key_images_str(const std::string &data, uint64_t &spent
 
   const size_t headerlen = 4 + 2 * sizeof(crypto::public_key);
   THROW_WALLET_EXCEPTION_IF(data_local.size() < headerlen, error::wallet_internal_error, std::string("Bad data size from file "));
-  const uint32_t offset = (uint8_t)data_local[0] | (((uint8_t)data_local[1]) << 8) | (((uint8_t)data_local[2]) << 16) | (((uint8_t)data_local[3]) << 24);
+  const uint32_t offset = offset_override ? *offset_override : (uint8_t)data_local[0] | (((uint8_t)data_local[1]) << 8) | (((uint8_t)data_local[2]) << 16) | (((uint8_t)data_local[3]) << 24);
   const crypto::public_key &public_spend_key = *(const crypto::public_key*)&data_local[4];
   const crypto::public_key &public_view_key = *(const crypto::public_key*)&data_local[4 + sizeof(crypto::public_key)];
   const cryptonote::account_public_address &keys = get_account().get_keys().m_account_address;
@@ -15410,6 +15415,11 @@ std::tuple<uint64_t, uint64_t, std::vector<tools::wallet2::exported_transfer_det
 //----------------------------------------------------------------------------------------------------
 std::string wallet2::export_outputs_to_str(bool all, uint32_t start, uint32_t count) const
 {
+  return std::get<2>(export_outputs_to_str_ext(all, start, count));
+}
+//----------------------------------------------------------------------------------------------------
+std::tuple<uint64_t, uint64_t, std::string> wallet2::export_outputs_to_str_ext(bool all, uint32_t start, uint32_t count) const
+{
   PERF_TIMER(export_outputs_to_str);
 
   std::stringstream oss;
@@ -15424,7 +15434,7 @@ std::string wallet2::export_outputs_to_str(bool all, uint32_t start, uint32_t co
   header += std::string((const char *)&keys.m_view_public_key, sizeof(crypto::public_key));
   PERF_TIMER(export_outputs_encryption);
   std::string ciphertext = encrypt_with_view_secret_key(header + oss.str());
-  return magic + ciphertext;
+  return std::make_tuple(std::get<0>(outputs), std::get<2>(outputs).size(), magic + ciphertext);
 }
 //----------------------------------------------------------------------------------------------------
 size_t wallet2::import_outputs(const std::tuple<uint64_t, uint64_t, std::vector<tools::wallet2::transfer_details>> &outputs)
