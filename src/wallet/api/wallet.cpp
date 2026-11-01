@@ -2248,7 +2248,7 @@ PendingTransaction *WalletImpl::createTransactionMultDest(const std::vector<stri
 
                 for (size_t i = 0; i < m_wallet->get_num_transfer_details(); ++i) {
                     const tools::wallet2::transfer_details &td = m_wallet->get_transfer_details(i);
-                    if (td.m_key_image == keyImage) {
+                    if (td.m_key_image == keyImage && m_wallet->is_transfer_unlocked(td)) {
                         max_coin_control_input += td.amount();
                     }
                     if (td.m_frozen) {
@@ -2348,17 +2348,14 @@ PendingTransaction *WalletImpl::createTransactionMultDest(const std::vector<stri
             setStatusError(writer.str());
         } catch (const tools::error::tx_not_possible& e) {
             std::ostringstream writer;
+            // The exception's figure is the whole account's, whatever coin control allows
+            const uint64_t available = preferred_inputs.empty() ? e.available() : max_coin_control_input;
 
             writer << boost::format(tr("not enough money to transfer, available only %s, transaction amount %s = %s + %s (fee)")) %
-                      print_money(e.available()) %
+                      print_money(available) %
                       print_money(e.tx_amount() + e.fee())  %
                       print_money(e.tx_amount()) %
                       print_money(e.fee());
-            if (max_coin_control_input != 0 &&
-                max_coin_control_input != e.available()) {
-                writer << std::endl << boost::format(tr("In addition, coin control was enabled for this transaction, limiting available balance to %s. Make sure that you have enough outputs selected in coin control")) %
-                    print_money(max_coin_control_input);
-            }
             if (max_frozen_input != 0 &&
                 max_frozen_input != e.available()) {
                 writer << std::endl << boost::format(tr("In addition, some a total of %s is frozen. Make sure that you have enough outputs unforzen outputs in coin control")) %
