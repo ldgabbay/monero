@@ -980,6 +980,22 @@ struct Wallet
     virtual uint64_t estimateTransactionFee(const std::vector<std::pair<std::string, uint64_t>> &destinations,
                                             PendingTransaction::Priority priority) const = 0;
 
+    /*!
+     * \brief feePerByte - the rate a transaction would pay now
+     * \param priority   adjusted as a transaction build would adjust it
+     * \return           atomic units per byte, or 0 on error
+     */
+    virtual uint64_t feePerByte(PendingTransaction::Priority priority) = 0;
+
+    /*!
+     * \brief estimateFee - the fee of a transaction of the given shape
+     * \param inputs      number of inputs
+     * \param outputs     number of outputs, including change
+     * \param feePerByte  rate from feePerByte
+     * \return            atomic units, or 0 on error
+     */
+    virtual uint64_t estimateFee(size_t inputs, size_t outputs, uint64_t feePerByte) = 0;
+
     virtual bool hasUnknownKeyImages() const = 0;
 
    /*!

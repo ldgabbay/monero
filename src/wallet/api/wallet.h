@@ -209,6 +209,8 @@ public:
     virtual void disposeTransaction(PendingTransaction * t) override;
     virtual uint64_t estimateTransactionFee(const std::vector<std::pair<std::string, uint64_t>> &destinations,
                                             PendingTransaction::Priority priority) const override;
+    uint64_t feePerByte(PendingTransaction::Priority priority) override;
+    uint64_t estimateFee(size_t inputs, size_t outputs, uint64_t feePerByte) override;
     virtual TransactionHistory * history() override;
     virtual AddressBook * addressBook() override;
     virtual Coins * coins() override;

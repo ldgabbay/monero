@@ -2523,6 +2523,50 @@ uint64_t WalletImpl::estimateTransactionFee(const std::vector<std::pair<std::str
         m_wallet->get_fee_quantization_mask());
 }
 
+uint64_t WalletImpl::feePerByte(PendingTransaction::Priority priority)
+{
+    // Leaves the status alone: this runs beside other wallet calls that read it.
+    try
+    {
+        return m_wallet->get_base_fee(m_wallet->adjust_priority(static_cast<uint32_t>(priority)));
+    }
+    catch (const std::exception &e)
+    {
+        LOG_ERROR("feePerByte failed: " << e.what());
+        return 0;
+    }
+}
+
+uint64_t WalletImpl::estimateFee(size_t inputs, size_t outputs, uint64_t feePerByte)
+{
+    const size_t pubkey_size = 33;
+    const size_t encrypted_paymentid_size = 11;
+    const size_t extra_size = pubkey_size + encrypted_paymentid_size;
+
+    // Leaves the status alone: this runs beside other wallet calls that read it.
+    try
+    {
+        return m_wallet->estimate_fee(
+            m_wallet->use_fork_rules(HF_VERSION_PER_BYTE_FEE, 0),
+            m_wallet->use_fork_rules(4, 0),
+            inputs,
+            m_wallet->get_min_ring_size() - 1,
+            outputs,
+            extra_size,
+            m_wallet->use_fork_rules(8, 0),
+            m_wallet->use_fork_rules(HF_VERSION_CLSAG, 0),
+            m_wallet->use_fork_rules(HF_VERSION_BULLETPROOF_PLUS, 0),
+            m_wallet->use_fork_rules(HF_VERSION_VIEW_TAGS, 0),
+            feePerByte,
+            m_wallet->get_fee_quantization_mask());
+    }
+    catch (const std::exception &e)
+    {
+        LOG_ERROR("estimateFee failed: " << e.what());
+        return 0;
+    }
+}
+
 TransactionHistory *WalletImpl::history()
 {
     return m_history.get();
